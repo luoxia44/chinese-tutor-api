@@ -1,0 +1,17 @@
+{
+  "name": "chinese-partner-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI 中文口语陪练 · Phase 0 web prototype (validates the voice loop + adapter architecture before the SwiftUI iOS port)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js"
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  }
+}

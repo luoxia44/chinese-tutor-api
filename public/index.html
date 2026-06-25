@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>语 · AI 中文口语陪练</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/app/tokens.css" />
+<style>
+  html,body{ margin:0; height:100%; background:#050308; }
+  #root{ position:relative; width:100%; max-width:440px; height:100dvh; margin:0 auto; overflow:hidden;
+    background:var(--bg-base); color:var(--t1); box-shadow:0 0 80px rgba(0,0,0,.6); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+
+<!-- 数据 + 后端桥接（classic） -->
+<script src="/app/i18n.js"></script>
+<script src="/app/data.js"></script>
+<script src="/app/api.js"></script>
+
+<!-- 组件（babel） -->
+<script type="text/babel" src="/app/icons.jsx"></script>
+<script type="text/babel" src="/app/portrait.jsx"></script>
+<script type="text/babel" src="/app/primitives.jsx"></script>
+<script type="text/babel" src="/app/screens-onboarding.jsx"></script>
+<script type="text/babel" src="/app/screens-home.jsx"></script>
+<script type="text/babel" src="/app/screens-explore.jsx"></script>
+<script type="text/babel" src="/app/screens-detail.jsx"></script>
+<script type="text/babel" src="/app/screens-call.jsx"></script>
+<script type="text/babel" src="/app/screens-memory.jsx"></script>
+<script type="text/babel" src="/app/screens-extra.jsx"></script>
+<script type="text/babel" src="/app/tabbar.jsx"></script>
+<script type="text/babel" src="/tweaks-panel.jsx"></script>
+<script type="text/babel" src="/app/app.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+  ReactDOM.createRoot(document.getElementById('root')).render(<CompanionApp />);
+</script>
+</body>
+</html>

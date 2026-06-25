@@ -1,0 +1,20 @@
+# Secrets — never commit API keys (CLAUDE.md §安全与合规)
+.env
+.env.local
+
+# Runtime memory store (user learning data — privacy)
+data/memory/*.json
+
+# Node
+node_modules/
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Not needed for deploy (keep repo lean)
+.tmp/
+.claude/
+.design-src/
+public_legacy/

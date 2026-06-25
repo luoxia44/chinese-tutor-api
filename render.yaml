@@ -1,0 +1,21 @@
+# Render Blueprint — one-click deploy of the AI Chinese Tutor backend.
+# Render reads this on "New + → Blueprint". Native Node runtime (only dep is `ws`).
+# Set DASHSCOPE_API_KEY as a secret in the dashboard (sync:false ⇒ not stored in repo).
+services:
+  - type: web
+    name: chinese-tutor-api
+    runtime: node
+    plan: free
+    region: singapore          # closest free region to Aliyun DashScope (lower realtime latency)
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/config
+    envVars:
+      - key: ENGINE
+        value: mock            # realtime voice uses Qwen directly; text brain stays offline/mock
+      - key: QWEN_REALTIME_MODEL
+        value: qwen3.5-omni-flash-realtime
+      - key: QWEN_REALTIME_URL
+        value: wss://dashscope.aliyuncs.com/api-ws/v1/realtime
+      - key: DASHSCOPE_API_KEY
+        sync: false            # ← paste your key in the Render dashboard (kept secret)
