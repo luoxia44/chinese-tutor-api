@@ -19,13 +19,23 @@ import { CompanionRepository } from '../companions/CompanionRepository.js';
 import { assembleSystemPrompt } from '../prompt/PromptAssembler.js';
 import { MemoryStore } from '../memory/MemoryStore.js';
 
+// 千问实时音色：按性别 + 年龄分配（均已实测在 qwen3.5-omni-flash-realtime 上可用）。
+// 成熟/年长角色用 Harvey(男)/Katerina(女)；年轻女声在 Cherry/Tina/Serena 间按角色区分，避免都一个声音。
+const YOUNG_F = ['Cherry', 'Tina', 'Serena'];
+const hashIdx = (s, n) => { let h = 0; for (let i = 0; i < (s || '').length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h % n; };
 const VOICE_FOR = (companion) => {
   if (process.env.QWEN_VOICE) return process.env.QWEN_VOICE; // 测试用：固定音色覆盖
   const isQwen3 = /qwen3/i.test(config.qwen.model || '');
+  const id = companion.identity || {};
   const v = (companion.voiceId || '').toLowerCase();
-  const male = v.includes('male') && !v.includes('female');
-  if (isQwen3) return male ? 'Ethan' : 'Tina';     // qwen3.x 合法音色（Cherry/Chelsie 在 flash 上不支持）
-  return male ? 'Ethan' : 'Chelsie';               // turbo 合法音色
+  const female = id.gender ? id.gender === 'female' : v.includes('female');
+  const age = Number(id.age) || 30;
+  const mature = age >= 50; // 50 岁以上用年长音色
+  if (isQwen3) {
+    if (female) return mature ? 'Katerina' : YOUNG_F[hashIdx(companion.id, YOUNG_F.length)];
+    return mature ? 'Harvey' : 'Ethan';
+  }
+  return female ? 'Chelsie' : 'Ethan'; // turbo 合法音色
 };
 
 export function attachRealtime(httpServer, path = '/ws/realtime') {
