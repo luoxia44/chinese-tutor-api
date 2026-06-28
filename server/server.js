@@ -202,8 +202,15 @@ async function handleApi(req, res, url) {
     delete summary._preferredName;
     delete summary._interests;
 
+    if (durationSec) MemoryStore.addUsageSec(userId, durationSec); // 累计免费额度用量（服务端口径）
     const { profile, rel } = MemoryStore.applySessionSummary(userId, companionId, summary);
     return sendJson(res, 200, { summary, profileFacts: profile.facts.length, sessions: rel.sessionSummaries.length });
+  }
+
+  // 已用免费秒数（客户端启动时同步，取 max(本地,服务端)，防清本地数据重置免费额度）
+  if (req.method === 'GET' && p === '/api/usage') {
+    const userId = url.searchParams.get('userId') || 'demo-user';
+    return sendJson(res, 200, { usedSec: MemoryStore.getUsageSec(userId) });
   }
 
   // ── Memory management (SPEC §4.4: 查看/删除) ──

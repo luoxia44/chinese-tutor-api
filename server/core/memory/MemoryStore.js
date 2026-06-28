@@ -19,6 +19,9 @@ function profilePath(userId) {
 function relPath(userId, companionId) {
   return resolve(DIR, `${safe(userId)}__${safe(companionId)}.relationship.json`);
 }
+function usagePath(userId) {
+  return resolve(DIR, `${safe(userId)}.usage.json`);
+}
 function safe(s) {
   return String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
 }
@@ -44,6 +47,17 @@ export const MemoryStore = {
     profile.updatedAt = new Date().toISOString();
     writeJson(profilePath(profile.userId), profile);
     return profile;
+  },
+
+  // ── 免费额度用量（按用户累计，防清本地数据绕过；服务端口径）──
+  getUsageSec(userId) {
+    return readJson(usagePath(userId), { sec: 0 }).sec || 0;
+  },
+  addUsageSec(userId, sec) {
+    const u = readJson(usagePath(userId), { sec: 0 });
+    u.sec = (u.sec || 0) + Math.max(0, Math.round(sec || 0));
+    writeJson(usagePath(userId), u);
+    return u.sec;
   },
 
   // ── (user × companion)-level relationship memory ──
