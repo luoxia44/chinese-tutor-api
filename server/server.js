@@ -15,7 +15,7 @@ import { createVoiceEngine } from './core/voice/VoiceEngine.js';
 import { Summarizer } from './core/llm/Summarizer.js';
 import { streamMiniMaxSentences } from './core/llm/streamChat.js';
 import { attachRealtime } from './core/realtime/QwenRealtimeProxy.js';
-import { privacyHtml, termsHtml } from './legal.js';
+import { privacyHtml, termsHtml, supportHtml } from './legal.js';
 
 const brain = createBrain();
 const voice = createVoiceEngine();
@@ -253,8 +253,8 @@ const server = createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   try {
-    if (url.pathname === '/privacy' || url.pathname === '/terms') {
-      const html = url.pathname === '/privacy' ? privacyHtml() : termsHtml();
+    if (url.pathname === '/privacy' || url.pathname === '/terms' || url.pathname === '/support') {
+      const html = url.pathname === '/privacy' ? privacyHtml() : url.pathname === '/terms' ? termsHtml() : supportHtml();
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       return res.end(html);
     }

@@ -90,3 +90,20 @@ export const termsHtml = () => shell('Terms of Service', `
 <h2>Changes</h2>
 <p>We may update these terms; continued use after changes constitutes acceptance.</p>
 `);
+
+// App Store 要求的技术支持页（App Information → Support URL 指向 /support）
+export const supportHtml = () => shell('Support', `
+<p>Need help with ${APP}? We're happy to assist.</p>
+
+<h2>Common questions</h2>
+<ul>
+<li><b>Calls won't connect / no sound.</b> Check that the app has microphone permission (Settings → ${APP} → Microphone) and that you have a stable internet connection, then try again.</li>
+<li><b>My free minutes ran out.</b> New users get 5 minutes of free call time. Subscribe in the app for unlimited practice.</li>
+<li><b>Manage or cancel subscription.</b> Subscriptions are handled by Apple: iPhone Settings → your name → Subscriptions.</li>
+<li><b>Restore purchases.</b> In the app: Me → Settings → Restore purchases.</li>
+<li><b>Clear my data.</b> In the app: Me → Settings → Clear learning memory. This erases what characters remember about you.</li>
+</ul>
+
+<h2>Contact us</h2>
+<p>Email <a href="mailto:${CONTACT}">${CONTACT}</a> and we'll get back to you as soon as we can. Please include your iOS version and a short description of the problem.</p>
+`);
