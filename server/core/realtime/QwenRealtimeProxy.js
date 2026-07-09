@@ -20,8 +20,9 @@ import { assembleSystemPrompt } from '../prompt/PromptAssembler.js';
 import { MemoryStore } from '../memory/MemoryStore.js';
 
 // 千问实时音色：按性别 + 年龄分配（均已实测在 qwen3.5-omni-flash-realtime 上可用）。
-// 成熟/年长角色用 Harvey(男)/Katerina(女)；年轻女声在 Cherry/Tina/Serena 间按角色区分，避免都一个声音。
-const YOUNG_F = ['Cherry', 'Tina', 'Serena'];
+// 成熟/年长角色用 Harvey(男)/Katerina(女)；年轻女声在 Tina/Serena 间按角色区分，避免都一个声音。
+// ⚠️ Cherry 在 flash 上报 "Voice 'Cherry' is not supported"（response 阶段 400 → 全程无声，像断线）——勿加回。
+const YOUNG_F = ['Tina', 'Serena'];
 const hashIdx = (s, n) => { let h = 0; for (let i = 0; i < (s || '').length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h % n; };
 const VOICE_FOR = (companion) => {
   if (process.env.QWEN_VOICE) return process.env.QWEN_VOICE; // 测试用：固定音色覆盖
@@ -70,6 +71,7 @@ function bridge(client, url) {
   const qwen = new WebSocket(qUrl, { headers: { Authorization: 'Bearer ' + config.qwen.apiKey } });
 
   let qOpen = false;
+  let replyStart = true; // 每条回复开头态：千问流式字幕常吞首音节，剩下的标点(如"，")不该当开头显示
   const toQwen = (o) => { if (qOpen && qwen.readyState === WebSocket.OPEN) qwen.send(JSON.stringify(o)); };
 
   console.log('[realtime] bridge start companion=' + companionId + ' → ' + qUrl);
@@ -114,14 +116,21 @@ function bridge(client, url) {
       case 'conversation.item.input_audio_transcription.completed':
         if (m.transcript) send(client, { type: 'user_transcript', text: m.transcript });
         break;
-      case 'response.audio_transcript.delta':
-        if (m.delta) send(client, { type: 'assistant_delta', text: m.delta });
+      case 'response.audio_transcript.delta': {
+        let text = m.delta || '';
+        if (replyStart && text) {
+          text = text.replace(/^[^\p{Script=Han}A-Za-z0-9]+/u, ''); // 开头只允许汉字/字母/数字：吞首音节残留的标点、杂符(>、》…)全清
+          if (text) replyStart = false; // 出现第一个真实字符后恢复原样透传
+        }
+        if (text) send(client, { type: 'assistant_delta', text });
+        break;
+      }
+      case 'response.done':
+        replyStart = true;
+        send(client, { type: 'assistant_done' });
         break;
       case 'response.audio.delta':
         if (m.delta) send(client, { type: 'assistant_audio', data: m.delta });
-        break;
-      case 'response.done':
-        send(client, { type: 'assistant_done' });
         break;
       case 'error':
         send(client, { type: 'error', message: (m.error && m.error.message) || 'qwen error' });

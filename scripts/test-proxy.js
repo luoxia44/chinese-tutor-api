@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const pcm = readFileSync(resolve(process.cwd(), '.tmpaudio/utt.pcm'));
-const ws = new WebSocket('ws://localhost:5173/ws/realtime?companionId=coworker-coco&userId=demo-user');
+const cid = process.argv[2] || 'coworker-coco'; // 可传角色id: node scripts/test-proxy.js streamer-damei
+const ws = new WebSocket('ws://localhost:5173/ws/realtime?companionId=' + cid + '&userId=demo-user');
 const send = (o) => ws.send(JSON.stringify(o));
 const t0 = Date.now();
 let audioBytes = 0, deltas = '', userT = '', firstAudio = 0, got = {};
