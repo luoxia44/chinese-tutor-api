@@ -1,0 +1,15 @@
+# 防止 Render 免费档闲置 15 分钟休眠（冷启动 ~50s 会让审核员首次通话失败）。
+# 每 10 分钟 ping 一次健康端点。审核通过后可删除此文件或在 GitHub Actions 页面禁用。
+name: keep-render-awake
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ping health endpoint
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 https://chinese-tutor-api.onrender.com/api/config || true)
+          echo "status: $code"
