@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { config, ROOT } from './config.js';
 import { CompanionRepository } from './core/companions/CompanionRepository.js';
 import { assembleSystemPrompt, describeLevel } from './core/prompt/PromptAssembler.js';
-import { MemoryStore } from './core/memory/MemoryStore.js';
+import { MemoryStore, hydrateMemory } from './core/memory/MemoryStore.js';
 import { createBrain } from './core/llm/Brain.js';
 import { createVoiceEngine } from './core/voice/VoiceEngine.js';
 import { Summarizer } from './core/llm/Summarizer.js';
@@ -270,6 +270,9 @@ const server = createServer(async (req, res) => {
 });
 
 attachRealtime(server, '/ws/realtime');
+
+// 先从云端恢复记忆再对外服务（Render 免费档磁盘临时，重启即空；未配 Upstash 时是 no-op）
+await hydrateMemory();
 
 server.listen(config.port, () => {
   console.log(`\n  AI 中文口语陪练 (Phase 0 prototype)`);

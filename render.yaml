@@ -19,3 +19,9 @@ services:
         value: wss://dashscope.aliyuncs.com/api-ws/v1/realtime
       - key: DASHSCOPE_API_KEY
         sync: false            # ← paste your key in the Render dashboard (kept secret)
+      # 记忆持久化（免费档磁盘是临时的）：Upstash Redis REST 备份。两个值都从
+      # console.upstash.com 数据库详情页复制，粘到 Render dashboard（保密，不入库）。
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false

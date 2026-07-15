@@ -3,11 +3,17 @@
 // Recall is "最近 N 条 + 全部 facts" — NOT vectors (that's Phase 2, SPEC §4.4 "别过度工程").
 // ≙ SwiftUI Core/Memory/MemoryStore.swift
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, basename } from 'node:path';
 import { ROOT } from '../../config.js';
 import { newUserProfile, newCompanionRelationship } from './models.js';
+import { backupFile, removeBackup, hydrate } from './RemoteBackup.js';
 
 const DIR = resolve(ROOT, 'data', 'memory');
+
+// 启动时从云端恢复记忆文件（Render 免费档磁盘是临时的）。server.js 在 listen 前 await 它。
+export function hydrateMemory() {
+  return hydrate(DIR);
+}
 const RECENT_SUMMARIES = 3; // 最近 N 条
 
 function ensureDir() {
@@ -35,7 +41,9 @@ function readJson(path, fallback) {
 }
 function writeJson(path, obj) {
   ensureDir();
-  writeFileSync(path, JSON.stringify(obj, null, 2), 'utf8');
+  const content = JSON.stringify(obj, null, 2);
+  writeFileSync(path, content, 'utf8');
+  backupFile(basename(path), content); // 异步推云端，不阻塞
 }
 
 export const MemoryStore = {
@@ -156,12 +164,14 @@ export const MemoryStore = {
   forgetCompanion(userId, companionId) {
     const p = relPath(userId, companionId);
     if (existsSync(p)) unlinkSync(p);
+    removeBackup(basename(p));
   },
   forgetEverything(userId) {
     ensureDir();
     for (const f of readdirSync(DIR)) {
       if (f.startsWith(`${safe(userId)}.`) || f.startsWith(`${safe(userId)}__`)) {
         unlinkSync(resolve(DIR, f));
+        removeBackup(f);
       }
     }
   },
