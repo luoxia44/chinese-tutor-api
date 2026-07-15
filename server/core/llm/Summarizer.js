@@ -34,7 +34,7 @@ export class Summarizer {
       durationSec: args.durationSec || 0,
     };
 
-    const useLLM = config.engine === 'minimax' && this.cfg.apiKey;
+    const useLLM = !!this.cfg.apiKey; // 有 key 就用真 LLM 提取；不再绑死 ENGINE=minimax（生产 ENGINE=mock 但有千问 key）
     let extracted;
     try {
       extracted = useLLM ? await this._extractWithLLM(transcript) : this._extractHeuristic(transcript);

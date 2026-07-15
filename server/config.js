@@ -56,10 +56,23 @@ export const config = {
     model: env.QWEN_REALTIME_MODEL || 'qwen-omni-turbo-realtime',
     url: env.QWEN_REALTIME_URL || 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime',
   },
-  summarizer: {
-    // Falls back to the MiniMax chat endpoint if not separately configured.
-    url: env.SUMMARIZER_URL || env.MINIMAX_CHAT_URL || 'https://api.minimax.io/v1/text/chatcompletion_v2',
-    model: env.SUMMARIZER_MODEL || env.MINIMAX_CHAT_MODEL || 'MiniMax-Text-01',
-    apiKey: env.SUMMARIZER_API_KEY || env.MINIMAX_API_KEY || '',
-  },
+  // 记忆总结器：显式 SUMMARIZER_* > MiniMax > DashScope(千问，OpenAI 兼容接口) > 无 key(启发式)。
+  // 生产(Render)只配了 DASHSCOPE_API_KEY → 自动走千问 qwen-flash，记忆提取才是真 LLM。
+  summarizer: env.SUMMARIZER_URL
+    ? {
+        url: env.SUMMARIZER_URL,
+        model: env.SUMMARIZER_MODEL || 'qwen-flash',
+        apiKey: env.SUMMARIZER_API_KEY || env.DASHSCOPE_API_KEY || env.MINIMAX_API_KEY || '',
+      }
+    : env.MINIMAX_API_KEY
+      ? {
+          url: env.MINIMAX_CHAT_URL || 'https://api.minimax.io/v1/text/chatcompletion_v2',
+          model: env.SUMMARIZER_MODEL || env.MINIMAX_CHAT_MODEL || 'MiniMax-Text-01',
+          apiKey: env.MINIMAX_API_KEY,
+        }
+      : {
+          url: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+          model: env.SUMMARIZER_MODEL || 'qwen-flash',
+          apiKey: env.DASHSCOPE_API_KEY || '', // 空则 Summarizer 走启发式
+        },
 };
