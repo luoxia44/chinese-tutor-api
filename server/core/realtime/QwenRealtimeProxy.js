@@ -63,9 +63,25 @@ function bridge(client, url) {
   const companion = CompanionRepository.byId(companionId);
   if (!companion) { send(client, { type: 'error', message: 'companion not found' }); client.close(); return; }
 
-  const memoryBlock = MemoryStore.buildInjection(userId, companionId);
-  const instructions = assembleSystemPrompt(companion, memoryBlock) +
-    '\n\n【实时语音通话】像真人打电话一样，用自然口语、简短地回应；一次只说一两句；不要念括号注释、不要英文/拼音。';
+  // ⚠️ 指令长度悬崖（实测 qwen3.5-omni-flash-realtime）：instructions 超过 ~950 字符后，
+  // semantic_vad 触发的回复会变成空响应（无文字无音频，像断线）。重度用户记忆一多必撞。
+  // 对策：总长预算 880，超出时只裁记忆块（永不裁人设/等级规则），并在句号处截断。
+  const MAX_INSTR = 880;
+  const RT_SUFFIX = '\n\n【实时语音通话】像真人打电话一样，用自然口语、简短地回应；一次只说一两句；不要念括号注释、不要英文/拼音。';
+  const SLOW_ADD = '\n\n【慢速】对方要求慢速：说得非常慢，每个词咬清楚，句子更短，句间停顿明显。';
+  const slowMode = url.searchParams.get('slow') === '1';
+  let memoryBlock = MemoryStore.buildInjection(userId, companionId);
+  const assemble = () => assembleSystemPrompt(companion, memoryBlock) + RT_SUFFIX + (slowMode ? SLOW_ADD : '');
+  let instructions = assemble();
+  if (instructions.length > MAX_INSTR && memoryBlock) {
+    const keep = Math.max(0, memoryBlock.length - (instructions.length - MAX_INSTR));
+    let cut = memoryBlock.slice(0, keep);
+    const dot = cut.lastIndexOf('。');
+    if (dot > 40) cut = cut.slice(0, dot + 1); // 尽量在句号处截断
+    memoryBlock = cut;
+    instructions = assemble();
+    console.log(`[realtime] instructions trimmed to ${instructions.length} chars (memory ${cut.length})`);
+  }
 
   const qUrl = config.qwen.url + '?model=' + config.qwen.model;
   const qwen = new WebSocket(qUrl, { headers: { Authorization: 'Bearer ' + config.qwen.apiKey } });
@@ -79,33 +95,37 @@ function bridge(client, url) {
   qwen.on('error', (e) => { console.log('[realtime] qwen error:', e.message); send(client, { type: 'error', message: 'upstream: ' + e.message }); });
   qwen.on('close', (code, reason) => { console.log('[realtime] qwen close', code, reason && reason.toString()); try { client.close(); } catch {} });
 
+  // 完整 session 配置。慢速是"连接时参数"（&slow=1）：qwen3.5 实测不接受会话中途
+  // session.update（之后回复变空响应），所以切换慢速由客户端断开重连，本桥只在建会话时定死。
+  let readySent = false; // 防御：session.updated 若重复到来，ready/开场白只做一次
+  const buildSession = () => {
+    const isQwen3 = /qwen3/i.test(config.qwen.model || '');
+    return {
+      modalities: ['text', 'audio'],
+      voice: VOICE_FOR(companion),
+      instructions,
+      input_audio_format: isQwen3 ? 'pcm' : 'pcm16',
+      output_audio_format: isQwen3 ? 'pcm' : 'pcm16',
+      input_audio_transcription: { model: 'gummy-realtime-v1' },
+      turn_detection: isQwen3
+        ? { type: 'semantic_vad' } // qwen3.x 用 semantic_vad（server_vad 会空响应）
+        : { type: 'server_vad', threshold: 0.2, prefix_padding_ms: 300, silence_duration_ms: 700 },
+    };
+  };
+
   qwen.on('message', (data) => {
     let m; try { m = JSON.parse(data.toString()); } catch { return; }
     switch (m.type) {
-      case 'session.created': {
-        // qwen3.x 实时模型推荐 semantic_vad（server_vad 不会自动触发回复 → 空响应）；turbo 用 server_vad。
-        const isQwen3 = /qwen3/i.test(config.qwen.model || '');
-        const turn_detection = isQwen3
-          ? { type: 'semantic_vad' }
-          : { type: 'server_vad', threshold: 0.2, prefix_padding_ms: 300, silence_duration_ms: 700 };
-        toQwen({
-          type: 'session.update',
-          session: {
-            modalities: ['text', 'audio'],
-            voice: VOICE_FOR(companion),
-            instructions,
-            input_audio_format: isQwen3 ? 'pcm' : 'pcm16',
-            output_audio_format: isQwen3 ? 'pcm' : 'pcm16',
-            input_audio_transcription: { model: 'gummy-realtime-v1' },
-            turn_detection,
-          },
-        });
+      case 'session.created':
+        toQwen({ type: 'session.update', session: buildSession() });
         break;
-      }
       case 'session.updated':
-        send(client, { type: 'ready' });
-        // 主动开场白：像接通电话先打招呼（仅首次连接；重连不重复）
-        if (greet) toQwen({ type: 'response.create', response: { instructions: '用一句自然简短的中文先主动跟对方打个招呼，开启这通电话。' } });
+        // 慢速开关也会触发 session.updated：ready 只发一次、开场白只打一次
+        if (!readySent) {
+          readySent = true;
+          send(client, { type: 'ready' });
+          if (greet) toQwen({ type: 'response.create', response: { instructions: '用一句自然简短的中文先主动跟对方打个招呼，开启这通电话。' } });
+        }
         break;
       case 'input_audio_buffer.speech_started':
         send(client, { type: 'vad', active: true });     // 用户开口 → 前端清空在播音频(打断)
@@ -145,6 +165,7 @@ function bridge(client, url) {
     let m; try { m = JSON.parse(data.toString()); } catch { return; }
     if (m.type === 'audio' && m.data) toQwen({ type: 'input_audio_buffer.append', audio: m.data });
     else if (m.type === 'cancel') toQwen({ type: 'response.cancel' });
+    // （慢速切换不走消息：客户端带 &slow=1 重连；中途 session.update 会导致 qwen3.5 空响应）
   });
   client.on('close', () => { try { qwen.close(); } catch {} });
   client.on('error', () => { try { qwen.close(); } catch {} });

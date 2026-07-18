@@ -2,7 +2,12 @@
 // Implements SPEC §2.4 verbatim. This is the single source of "难度可感差异" (acceptance #2).
 // ≙ SwiftUI Core/Prompt/PromptAssembler.swift
 
-const SPEECH_RATE_ZH = { slow: '慢', normal: '正常', fast: '快' };
+// slow 档措辞要够狠：qwen 实时语音对"慢"不敏感，必须具体到"一半语速/逐字/停顿"才可感（用户反馈初学者听不懂）
+const SPEECH_RATE_ZH = {
+  slow: '非常慢。像对完全零基础的初学者说话：语速压到正常人的一半，一个字一个字咬清楚，句子说完停顿一下再继续',
+  normal: '正常',
+  fast: '快，像本地人日常聊天的语速',
+};
 
 /**
  * @param {object} companion  full companion record from the seed
