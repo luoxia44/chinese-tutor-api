@@ -50,6 +50,8 @@ export const config = {
     ttsWsUrl: env.MINIMAX_TTS_WS_URL || 'wss://api.minimax.io/ws/v1/t2a_v2',
     ttsModel: env.MINIMAX_TTS_MODEL || 'speech-2.6-hd',
   },
+  // 赠送/白名单：这些匿名 userId 视为无限对话（朋友、内测、客服补偿）。逗号分隔，配在 env COMP_USERS。
+  compUsers: new Set((env.COMP_USERS || '').split(',').map((s) => s.trim()).filter(Boolean)),
   // 阿里百炼 Qwen-Omni 实时语音（音频优先 S2S，端到端打电话）
   qwen: {
     apiKey: env.DASHSCOPE_API_KEY || '',

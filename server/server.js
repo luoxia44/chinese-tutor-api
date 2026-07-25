@@ -210,7 +210,8 @@ async function handleApi(req, res, url) {
   // 已用免费秒数（客户端启动时同步，取 max(本地,服务端)，防清本地数据重置免费额度）
   if (req.method === 'GET' && p === '/api/usage') {
     const userId = url.searchParams.get('userId') || 'demo-user';
-    return sendJson(res, 200, { usedSec: MemoryStore.getUsageSec(userId) });
+    // comp=true → 白名单用户，客户端据此解锁无限对话（见 billing.loadBilling）
+    return sendJson(res, 200, { usedSec: MemoryStore.getUsageSec(userId), comp: config.compUsers.has(userId) });
   }
 
   // ── Memory management (SPEC §4.4: 查看/删除) ──
