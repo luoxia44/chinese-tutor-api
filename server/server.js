@@ -16,6 +16,7 @@ import { Summarizer } from './core/llm/Summarizer.js';
 import { streamMiniMaxSentences } from './core/llm/streamChat.js';
 import { attachRealtime } from './core/realtime/QwenRealtimeProxy.js';
 import { privacyHtml, termsHtml, supportHtml } from './legal.js';
+import { collectStats, adminHtml } from './admin.js';
 
 const brain = createBrain();
 const voice = createVoiceEngine();
@@ -254,6 +255,16 @@ const server = createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   try {
+    // 运营数据面板：/admin?k=<ADMIN_KEY>（未配 ADMIN_KEY 则关闭，避免公网裸奔）
+    if (url.pathname === '/admin') {
+      const key = process.env.ADMIN_KEY || '';
+      if (!key) { res.writeHead(404); return res.end('not found'); }
+      if (url.searchParams.get('k') !== key) { res.writeHead(401, { 'Content-Type': 'text/plain' }); return res.end('unauthorized'); }
+      const stats = collectStats();
+      if (url.searchParams.get('format') === 'json') return sendJson(res, 200, stats);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      return res.end(adminHtml(stats));
+    }
     if (url.pathname === '/privacy' || url.pathname === '/terms' || url.pathname === '/support') {
       const html = url.pathname === '/privacy' ? privacyHtml() : url.pathname === '/terms' ? termsHtml() : supportHtml();
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
