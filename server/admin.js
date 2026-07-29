@@ -11,6 +11,20 @@ const FREE_SECONDS = 300; // 与 app 端 billing.FREE_SECONDS 一致
 const readJson = (p, fb) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return fb; } };
 const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
 
+// 国家：优先取语言标签里的地区码（en-US → US）；没有就用时区大区（America/New_York → America）
+const FLAG = (cc) => /^[A-Z]{2}$/.test(cc) ? String.fromCodePoint(...[...cc].map((c) => 0x1F1E6 + c.charCodeAt(0) - 65)) + ' ' : '';
+function countryOf(u) {
+  const m = /[-_]([A-Za-z]{2})(?:[-_]|$)/.exec(u.locale || '');
+  if (m) { const cc = m[1].toUpperCase(); return FLAG(cc) + cc; }
+  if (u.tz) return '~ ' + String(u.tz).split('/')[0];
+  return 'Unknown';
+}
+const tally = (arr) => {
+  const m = new Map();
+  for (const v of arr) { const k = v || 'Unknown'; m.set(k, (m.get(k) || 0) + 1); }
+  return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => ({ k, n }));
+};
+
 // 扫描全量数据，聚合成面板需要的指标
 export function collectStats() {
   if (!existsSync(DIR)) return emptyStats();
@@ -43,7 +57,10 @@ export function collectStats() {
         sessions.push({ t, dur, uid: rel.userId, companionId: rel.companionId });
       }
     } else if (f.endsWith('.profile.json')) {
-      touch(f.replace('.profile.json', ''));
+      const u = touch(f.replace('.profile.json', ''));
+      const prof = readJson(resolve(DIR, f), {});
+      if (prof.locale) u.locale = prof.locale;
+      if (prof.tz) u.tz = prof.tz;
     }
   }
 
@@ -93,6 +110,8 @@ export function collectStats() {
       { label: 'Came back (2+ calls)', value: returned },
     ],
     days,
+    regions: tally(all.map((u) => countryOf(u))),   // 国家（设备语言里的地区码，回退时区大区）
+    locales: tally(all.map((u) => u.locale || '')), // 系统语言
     topCompanions: [...compCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([id, n]) => ({ id, calls: n })),
     recent: sessions.slice(-15).reverse().map((s) => ({ when: new Date(s.t).toISOString().replace('T', ' ').slice(0, 16), uid: s.uid.slice(0, 12), companionId: s.companionId, dur: s.dur })),
   };
@@ -113,6 +132,12 @@ export function adminHtml(s) {
     return `<div class="frow"><div class="flabel">${f.label}</div><div class="ftrack"><div class="ffill" style="width:${Math.max(2, pct)}%"></div></div><div class="fval">${f.value} <em>${pct}%</em></div></div>`;
   }).join('');
   const comps = s.topCompanions.map((c) => `<tr><td>${c.id}</td><td class="num">${c.calls}</td></tr>`).join('') || '<tr><td colspan="2" class="dim">No data yet</td></tr>';
+  const tallyRows = (rows, total) => (rows || []).map((r) => {
+    const pct = total ? Math.round((r.n / total) * 100) : 0;
+    return `<tr><td>${r.k}</td><td class="num">${r.n}</td><td class="num dim">${pct}%</td></tr>`;
+  }).join('') || '<tr><td colspan="3" class="dim">No data yet</td></tr>';
+  const regions = tallyRows(s.regions, s.totals.users);
+  const locales = tallyRows(s.locales, s.totals.users);
   const recent = s.recent.map((r) => `<tr><td class="dim">${r.when}</td><td>${r.uid}…</td><td>${r.companionId}</td><td class="num">${r.dur}s</td></tr>`).join('') || '<tr><td colspan="4" class="dim">No calls yet</td></tr>';
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -164,6 +189,11 @@ th{color:#9A92B8;font-weight:600;font-size:11.5px;text-transform:uppercase}
 <h2>Activation funnel</h2><div class="panel">${funnel || '<div class="dim">No data yet</div>'}</div>
 
 <h2>Calls per day (30d)</h2><div class="panel"><div class="chart">${bars}</div></div>
+
+<div class="two">
+  <div><h2>Country <span style="color:#6B6486;font-weight:400">(device region)</span></h2><div class="panel"><table><tr><th>Country</th><th class="num">Devices</th><th class="num">%</th></tr>${regions}</table></div></div>
+  <div><h2>Device language</h2><div class="panel"><table><tr><th>Locale</th><th class="num">Devices</th><th class="num">%</th></tr>${locales}</table></div></div>
+</div>
 
 <div class="two">
   <div><h2>Top characters</h2><div class="panel"><table><tr><th>Character</th><th class="num">Calls</th></tr>${comps}</table></div></div>

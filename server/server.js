@@ -187,8 +187,18 @@ async function handleApi(req, res, url) {
   // End session → summarize (async-style, but we await so the client gets the result to show)
   // → merge into memory. Verifies acceptance #3 on the *next* session.
   if (req.method === 'POST' && p === '/api/session/end') {
-    const { sessionId = randomUUID(), userId = 'demo-user', companionId, transcript = [], durationSec = 0 } = await readBody(req);
+    const { sessionId = randomUUID(), userId = 'demo-user', companionId, transcript = [], durationSec = 0, locale = '', tz = '' } = await readBody(req);
     if (!companionId) return sendJson(res, 400, { error: 'companionId required' });
+
+    // 记录设备粗粒度地区（看板按国家/时区拆分，判断广告投放效果）。只存语言标签和时区名。
+    if (locale || tz) {
+      const prof = MemoryStore.getProfile(userId);
+      if ((locale && prof.locale !== locale) || (tz && prof.tz !== tz)) {
+        if (locale) prof.locale = String(locale).slice(0, 20);
+        if (tz) prof.tz = String(tz).slice(0, 40);
+        MemoryStore.saveProfile(prof);
+      }
+    }
 
     const summary = await summarizer.summarize({ sessionId, userId, companionId, transcript, durationSec });
 
