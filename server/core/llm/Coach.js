@@ -18,12 +18,54 @@ const LANG_NAME = {
   ko: 'Korean', fr: 'French', pt: 'Portuguese', zh: '简体中文',
 };
 
+// 实测：只在中文 prompt 里写"用 English 写"，qwen-flash 会时灵时不灵地回中文——
+// 对一个刚学中文的用户，看不懂的解释等于没有。所以用目标语言本身再命令一遍，
+// 并且放在最后一行（recency）。配合 _sameLanguage 的兜底校验双保险。
+const LANG_ORDER = {
+  en: 'IMPORTANT: every "why" value must be written in English. Never write "why" in Chinese.',
+  es: 'IMPORTANTE: cada valor de "why" debe estar escrito en español. Nunca escribas "why" en chino.',
+  ja: '重要：「why」の値は必ず日本語で書いてください。中国語で書いてはいけません。',
+  ko: '중요: "why" 값은 반드시 한국어로 작성하세요. 중국어로 쓰지 마세요.',
+  fr: 'IMPORTANT : chaque valeur « why » doit être rédigée en français. N\'écris jamais « why » en chinois.',
+  pt: 'IMPORTANTE: cada valor de "why" deve ser escrito em português. Nunca escreva "why" em chinês.',
+  zh: '',
+};
+
+const CJK = /[\u4e00-\u9fff]/g;
+const KANA = /[\u3040-\u30ff]/;
+const HANGUL = /[\uac00-\ud7af]/;
+const LATIN = /[A-Za-zÀ-ÿ]/g;
+
+// why 是不是真的用学习者的语言写的
+function sameLanguage(why, lang) {
+  if (lang === 'ja') return KANA.test(why);          // 全是汉字没有假名 = 其实是中文
+  if (lang === 'ko') return HANGUL.test(why);
+  const cjk = (why.match(CJK) || []).length;         // 拉丁语系：汉字不该比字母多
+  return cjk === 0 || cjk < (why.match(LATIN) || []).length;
+}
+
+/**
+ * why 能不能给用户看。实测 qwen-flash 对英语的语言指令遵守得好，对法/西/葡这些
+ * 长尾语言经常无视、直接回中文。所以分三档：
+ *   ① 就是目标语言 → 用
+ *   ② 不是目标语言但是英文 → 也用。对一个正在学中文的法国人，英文解释读得懂，
+ *      比没有解释强得多；强行丢掉是把好东西也扔了。
+ *   ③ 是中文 → 丢。看不懂的解释等于没有，还占地方。
+ */
+function whyAcceptable(why, lang) {
+  if (!why || lang === 'zh') return true;
+  if (sameLanguage(why, lang)) return true;
+  const cjk = (why.match(CJK) || []).length;
+  const latin = (why.match(LATIN) || []).length;
+  return latin > 0 && cjk < latin;                   // 英文兜底
+}
+
 const MAX_FIXES = 2;        // 一次最多改两句
 const MIN_USER_TURNS = 2;   // 说得太少就不点评（秒挂/只说了个"你好"）
 const MAX_SENT = 120;       // said / better 的长度上限，防模型跑飞
 const MAX_WHY = 220;        // why 要用学习者母语写完整一句，120 会把英文解释拦腰截断
 
-const promptFor = (langName) => `你是一位耐心的中文口语老师。下面是一位外国学习者和一个 AI 角色的对话记录。
+const promptFor = (langName, langOrder) => `你是一位耐心的中文口语老师。下面是一位外国学习者和一个 AI 角色的对话记录。
 只点评【学习者】说的话，不要点评 AI。
 
 先做 fixes，再挑 win —— 顺序很重要，别拿一句本身有错的话去夸人。
@@ -43,10 +85,12 @@ win 规则：
 7. 如果每句话都被 fixes 挑走了，win 就夸 ta 敢开口那一点，said 填其中最短的一句。
 
 why 规则：
-8. 用 ${langName} 写，一句话说清差别在哪，写完整不要半途而止。像朋友解释一样，不要用语法术语，不要说教。
+8. **必须用 ${langName} 写**，不是中文。学习者是外国人，看不懂中文解释。一句话说清差别在哪，写完整不要半途而止。像朋友解释一样，不要用语法术语，不要说教。
 
 只输出 JSON，不要任何解释、不要代码块标记：
-{"win":{"said":"ta说得好的原话","why":"为什么好，一句话"},"fixes":[{"said":"原话","better":"更地道的说法","why":"差别在哪"}]}`;
+{"win":{"said":"ta说得好的原话","why":"为什么好，一句话"},"fixes":[{"said":"原话","better":"更地道的说法","why":"差别在哪"}]}
+
+${langOrder}`;
 
 const clean = (v, max = MAX_SENT) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const cleanWhy = (v) => clean(v, MAX_WHY);
@@ -68,15 +112,29 @@ export class Coach {
     if (!this.cfg.apiKey) return empty;                  // 没 key 就不点评（点评没有启发式版本 —— 瞎改不如不改）
 
     try {
-      const raw = await this._ask(transcript, LANG_NAME[lang] || LANG_NAME.en);
-      return this._normalize(raw, userTurns);
+      const raw = await this._ask(transcript, lang);
+      const out = this._normalize(raw, userTurns, lang);
+      // 实测 qwen-flash 对英语指令服从得好，对法语这类长尾语言常常无视、直接回中文，
+      // 于是解释被兜底逻辑全丢掉，用户只看到"原话→更地道"没有为什么。
+      // 这时用英文重来一次：正在学中文的人基本都读得懂英文，比没有解释好得多。
+      // 只在失败路径上多花一次调用（<¥0.001），而且和总结是并行的。
+      if (out.dropped && lang !== 'en' && lang !== 'zh') {
+        console.warn('[coach] %s 的解释全被丢弃，改用英文重试', lang);
+        const en = await this._ask(transcript, 'en');
+        const alt = this._normalize(en, userTurns, 'en');
+        if (alt.fixes.length || alt.win) { delete alt.dropped; return alt; }
+      }
+      delete out.dropped;
+      return out;
     } catch (e) {
       console.warn('[coach] 点评失败，本次跳过:', e.message);
       return empty;
     }
   }
 
-  async _ask(transcript, langName) {
+  async _ask(transcript, lang, retry = 1) {
+    const langName = LANG_NAME[lang] || LANG_NAME.en;
+    const langOrder = LANG_ORDER[lang] || LANG_ORDER.en;
     const convo = transcript
       .map((m) => `${m.role === 'user' ? '学习者' : 'AI'}：${m.content}`)
       .join('\n')
@@ -87,23 +145,36 @@ export class Coach {
       body: JSON.stringify({
         model: this.cfg.model,
         messages: [
-          { role: 'system', content: promptFor(langName) },
+          { role: 'system', content: promptFor(langName, langOrder) },
           { role: 'user', content: convo },
         ],
-        temperature: 0.3,
+        temperature: retry > 0 ? 0.3 : 0, // 重试那次压到 0，减少再跑飞
         max_tokens: 700,
       }),
     });
     if (!res.ok) throw new Error(`coach ${res.status}`);
     const data = await res.json();
     const text = data?.choices?.[0]?.message?.content || '{}';
-    return JSON.parse((text.match(/\{[\s\S]*\}/) || ['{}'])[0]);
+    try {
+      return JSON.parse((text.match(/\{[\s\S]*\}/) || ['{}'])[0]);
+    } catch (e) {
+      if (retry <= 0) throw e;
+      console.warn('[coach] 模型吐了非法 JSON，重试一次');
+      return this._ask(transcript, lang, retry - 1);
+    }
   }
 
   // 模型输出不可信：截断、去空、限量，并且丢掉 said 不在原话里的条目（防编造）
-  _normalize(raw, userTurns) {
+  _normalize(raw, userTurns, lang = 'en') {
     const saidPool = userTurns.map((m) => String(m.content));
     const isReal = (said) => !!said && saidPool.some((t) => t.includes(said));
+    // 模型偶尔无视语言要求回中文。宁可不给解释，也不给一句用户读不懂的话。
+    let dropped = 0;
+    const why = (v) => {
+      const w = cleanWhy(v);
+      if (w && !whyAcceptable(w, lang)) { dropped += 1; return ''; }
+      return w;
+    };
 
     const fixes = [];
     for (const f of Array.isArray(raw?.fixes) ? raw.fixes : []) {
@@ -112,7 +183,7 @@ export class Coach {
       if (!said || !better || said === better) continue;
       if (!isReal(said)) continue;                        // 模型编的原话，丢掉
       if (fixes.some((x) => x.better === better)) continue; // 同一条重复给
-      fixes.push({ said, better, why: cleanWhy(f.why) });
+      fixes.push({ said, better, why: why(f.why) });
       if (fixes.length >= MAX_FIXES) break;
     }
 
@@ -120,8 +191,8 @@ export class Coach {
     let win = null;
     const said = clean(raw?.win?.said);
     if (said && isReal(said) && !fixes.some((f) => f.said === said || said.includes(f.said))) {
-      win = { said, why: cleanWhy(raw.win.why) };
+      win = { said, why: why(raw.win.why) };
     }
-    return { win, fixes };
+    return { win, fixes, dropped };
   }
 }
