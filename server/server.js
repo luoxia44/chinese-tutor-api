@@ -13,6 +13,7 @@ import { MemoryStore, hydrateMemory } from './core/memory/MemoryStore.js';
 import { createBrain } from './core/llm/Brain.js';
 import { createVoiceEngine } from './core/voice/VoiceEngine.js';
 import { Summarizer } from './core/llm/Summarizer.js';
+import { Coach } from './core/llm/Coach.js';
 import { streamMiniMaxSentences } from './core/llm/streamChat.js';
 import { attachRealtime } from './core/realtime/QwenRealtimeProxy.js';
 import { privacyHtml, termsHtml, supportHtml } from './legal.js';
@@ -21,6 +22,7 @@ import { collectStats, adminHtml } from './admin.js';
 const brain = createBrain();
 const voice = createVoiceEngine();
 const summarizer = new Summarizer();
+const coach = new Coach();
 
 const PUBLIC = resolve(ROOT, 'public');
 const AVATARS = resolve(ROOT, 'avatars');
@@ -187,7 +189,7 @@ async function handleApi(req, res, url) {
   // End session → summarize (async-style, but we await so the client gets the result to show)
   // → merge into memory. Verifies acceptance #3 on the *next* session.
   if (req.method === 'POST' && p === '/api/session/end') {
-    const { sessionId = randomUUID(), userId = 'demo-user', companionId, transcript = [], durationSec = 0, locale = '', tz = '' } = await readBody(req);
+    const { sessionId = randomUUID(), userId = 'demo-user', companionId, transcript = [], durationSec = 0, locale = '', tz = '', lang = 'en' } = await readBody(req);
     if (!companionId) return sendJson(res, 400, { error: 'companionId required' });
 
     // 记录设备粗粒度地区（看板按国家/时区拆分，判断广告投放效果）。只存语言标签和时区名。
@@ -200,7 +202,12 @@ async function handleApi(req, res, url) {
       }
     }
 
-    const summary = await summarizer.summarize({ sessionId, userId, companionId, transcript, durationSec });
+    // 总结（记忆）和点评（知识本）是两次独立的 qwen-flash 调用 —— 并行跑，
+    // 挂断后用户在等这个响应才看到收获屏，串行会白白多等一秒。
+    const [summary, coaching] = await Promise.all([
+      summarizer.summarize({ sessionId, userId, companionId, transcript, durationSec }),
+      coach.analyze({ transcript, lang }),
+    ]);
 
     // Pull out-of-band profile signals from the summarizer into the user profile.
     if (summary._preferredName || (summary._interests && summary._interests.length)) {
@@ -215,7 +222,12 @@ async function handleApi(req, res, url) {
 
     if (durationSec) MemoryStore.addUsageSec(userId, durationSec); // 累计免费额度用量（服务端口径）
     const { profile, rel } = MemoryStore.applySessionSummary(userId, companionId, summary);
-    return sendJson(res, 200, { summary, profileFacts: profile.facts.length, sessions: rel.sessionSummaries.length });
+    // 点评里"可以说得更地道"的条目进知识本；win 只在本次收获屏出现，不入库（夸奖不需要复习）
+    const added = MemoryStore.addNotebookEntries(userId, { companionId, sessionId, fixes: coaching.fixes });
+    return sendJson(res, 200, {
+      summary, coaching, notebookAdded: added.length,
+      profileFacts: profile.facts.length, sessions: rel.sessionSummaries.length,
+    });
   }
 
   // 已用免费秒数（客户端启动时同步，取 max(本地,服务端)，防清本地数据重置免费额度）
@@ -223,6 +235,22 @@ async function handleApi(req, res, url) {
     const userId = url.searchParams.get('userId') || 'demo-user';
     // comp=true → 白名单用户，客户端据此解锁无限对话（见 billing.loadBilling）
     return sendJson(res, 200, { usedSec: MemoryStore.getUsageSec(userId), comp: config.compUsers.has(userId) });
+  }
+
+  // ── 知识本：跨对话累积的"更地道的说法" ──
+  if (req.method === 'GET' && p === '/api/notebook') {
+    const userId = url.searchParams.get('userId') || 'demo-user';
+    return sendJson(res, 200, MemoryStore.getNotebook(userId));
+  }
+  if (req.method === 'POST' && p === '/api/notebook/mastered') {
+    const { userId = 'demo-user', id, mastered = true } = await readBody(req);
+    if (!id) return sendJson(res, 400, { error: 'id required' });
+    return sendJson(res, 200, MemoryStore.setNotebookMastered(userId, id, mastered));
+  }
+  if (req.method === 'POST' && p === '/api/notebook/delete') {
+    const { userId = 'demo-user', id } = await readBody(req);
+    if (!id) return sendJson(res, 400, { error: 'id required' });
+    return sendJson(res, 200, MemoryStore.deleteNotebookEntry(userId, id));
   }
 
   // ── Memory management (SPEC §4.4: 查看/删除) ──

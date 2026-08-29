@@ -20,7 +20,7 @@ services:
       # 赠送/白名单：这些匿名 userId 无限对话（本机开发机 / 内测 / 客服补偿）。逗号分隔。
       # userId 在 App 的 Settings → Account ID 里能看到。
       - key: COMP_USERS
-        value: u_mrm5xp3w98cxa1ra
+        value: u_mrm5xp3w98cxa1ra,u_mrn58yv972fecpqv
       - key: DASHSCOPE_API_KEY
         sync: false            # ← paste your key in the Render dashboard (kept secret)
       # 记忆持久化（免费档磁盘是临时的）：Upstash Redis REST 备份。两个值都从
