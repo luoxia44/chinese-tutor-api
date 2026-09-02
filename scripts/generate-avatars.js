@@ -49,11 +49,14 @@ const SCENE = '背景是与角色身份相符的真实场景环境（有层次�
 const COMPOSE = '竖构图 3:4 半身像。取景铁律：人物的脸和眼睛落在画面从上到下约 12%-46% 的区域（顶部留出空白、脸不要贴顶）；画面下方约 40% 留给身体、桌面或背景（之后会被界面遮挡，此处不要放脸或关键细节）；人物左右各留约 6% 边距、不要贴边被裁切。';
 
 function buildMain(c) {
+  // 非人类/特殊风格的角色（熊猫、仙侠、说唱歌手）套不进下面这套"恋爱养成风格的中国男女"模板，
+  // 在 seed 里给 avatarPrompt 就走自己的提示词，只复用构图铁律（脸的位置、下方 40% 留白）。
+  if (c.avatarPrompt) return `${c.avatarPrompt} 构图：${COMPOSE} 画面中不要出现任何文字、水印、UI 或边框。`;
   const id = c.identity; const g = id.gender === 'male' ? '男性' : '女性';
   return `为一款手机端「恋爱养成风格」的中文口语陪练 App 绘制一张精美的角色立绘。角色：一位 ${id.age} 岁的中国${id.region}${g}，职业是${id.role}，性格${(id.personality || []).join('、')}。${id.backstory || ''} 风格：${STYLE} 场景：${SCENE} 构图：${COMPOSE} 人物面向镜头、${EMOTIONS[0].desc}。虚构人物，不是任何真实存在的人。画面中不要出现任何文字、水印、UI 或边框。`;
 }
 function buildEdit(desc) {
-  return `保持图中同一个人，发型、妆容、服装、场景背景、镜头机位与打光全部保持完全一致，只把表情和神态改为：${desc}。${COMPOSE} 写实风格、精致迷人。不要出现任何文字、水印或边框。`;
+  return `保持图中同一个角色（同一张脸/同一只动物），造型、服装或毛色、场景背景、镜头机位与打光全部保持完全一致，只把表情和神态改为：${desc}。${COMPOSE} 写实风格、精致迷人。不要出现任何文字、水印或边框。`;
 }
 
 const TMP = resolve(ROOT, '.tmp'); if (!existsSync(TMP)) mkdirSync(TMP, { recursive: true });

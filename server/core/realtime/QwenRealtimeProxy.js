@@ -67,7 +67,7 @@ function bridge(client, url) {
   // semantic_vad 触发的回复会变成空响应（无文字无音频，像断线）。重度用户记忆一多必撞。
   // 对策：总长预算 880，超出时只裁记忆块（永不裁人设/等级规则），并在句号处截断。
   const MAX_INSTR = 880;
-  const RT_SUFFIX = '\n\n【实时语音通话】像真人打电话一样，用自然口语、简短地回应；一次只说一两句；不要念括号注释、不要英文/拼音。';
+  const RT_SUFFIX = '\n\n【这是实时语音通话】像真人打电话一样说话。'; // 其余口语/简短/不念注释的要求已在 PromptAssembler 的【怎么说】里，别重复占预算
   const SLOW_ADD = '\n\n【慢速】对方要求慢速：说得非常慢，每个词咬清楚，句子更短，句间停顿明显。';
   const slowMode = url.searchParams.get('slow') === '1';
   let memoryBlock = MemoryStore.buildInjection(userId, companionId);
