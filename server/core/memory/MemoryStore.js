@@ -212,6 +212,17 @@ export const MemoryStore = {
   },
 
   /**
+   * 这个角色该知道的兴趣。老数据是纯字符串（那时候兴趣全局共享），当作共享保留——
+   * 宁可多共享也不要弄丢用户已有的记忆；新数据是 {text, companionId}。
+   */
+  interestsFor(profile, companionId) {
+    return (profile.interests || [])
+      .filter((x) => typeof x === 'string' || !x.companionId || x.companionId === companionId)
+      .map((x) => (typeof x === 'string' ? x : x.text))
+      .filter(Boolean);
+  },
+
+  /**
    * Build the compact memory block injected into the system prompt (SPEC §4.3).
    * Only the most relevant slice: preferred name, a few interests/facts, recent one-liners, rapport.
    * Token-budgeted on purpose — do NOT dump full history.
@@ -230,7 +241,8 @@ export const MemoryStore = {
 
     // 名字只在“你们聊过”之后才知道；初次见面不要主动叫名字，要等对方介绍。语气自然，别刻意、别每句都叫。
     if (profile.preferredName && times > 0) parts.push(`你们熟了，ta 叫 ${profile.preferredName}（自然的时候可以称呼，但不必刻意或每句都叫）。`);
-    if (profile.interests.length) parts.push(`ta 的兴趣：${profile.interests.slice(0, 3).join('、')}。`);
+    const myInterests = this.interestsFor(profile, companionId);
+    if (myInterests.length) parts.push(`ta 的兴趣：${myInterests.slice(0, 3).join('、')}。`);
     if (mine.length) {
       parts.push(`关于 ta：${mine.slice(-4).map((f) => f.text).join('；')}。`);
     }

@@ -213,8 +213,13 @@ async function handleApi(req, res, url) {
     if (summary._preferredName || (summary._interests && summary._interests.length)) {
       const profile = MemoryStore.getProfile(userId);
       if (summary._preferredName && !profile.preferredName) profile.preferredName = summary._preferredName;
-      const known = new Set(profile.interests);
-      for (const i of summary._interests || []) if (i && !known.has(i)) { profile.interests.push(i); known.add(i); }
+      // ⚠️ 兴趣必须和事实一样按角色隔离。第一版只隔离了 facts，兴趣仍是一个全局数组，
+      // 结果广场舞李阿姨会知道用户跟 Vivian 聊过什么——用户看到的就是每个角色顶着
+      // 同一串兴趣列表。兴趣本来就是从具体对话里提取的，跟事实没有区别。
+      const known = new Set(profile.interests.map((x) => (typeof x === 'string' ? x : x && x.text)));
+      for (const i of summary._interests || []) {
+        if (i && !known.has(i)) { profile.interests.push({ text: i, companionId }); known.add(i); }
+      }
       MemoryStore.saveProfile(profile);
     }
     delete summary._preferredName;
